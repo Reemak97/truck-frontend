@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نظام إدارة وصول الشاحنات</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans p-6">
+
+  <header class="mb-8 text-center">
+    <h1 class="text-3xl font-bold text-gray-800">نظام إدارة وصول الشاحنات للمصنع</h1>
+    <p class="text-gray-600 mt-2">تسجيل ومتابعة أسبقية الوصول</p>
+  </header>
+
+  <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- نموذج التسجيل -->
+    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+      <h2 className="text-xl font-bold text-gray-700 mb-4 pb-2 border-b">تسجيل شاحنة جديدة</h2>
+      <div id="alert" class="hidden p-3 rounded mb-4 text-sm font-semibold"></div>
+
+      <form id="truckForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">اسم السائق</label>
+          <input type="text" id="driver_name" required class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="اسم السائق الثلاثي">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">رقم الإقامة / الهوية</label>
+          <input type="text" id="residency_id" required class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="رقم الإقامة">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">حروف اللوحة</label>
+            <input type="text" id="plate_letters" required class="w-full border rounded-lg p-2.5 text-center" placeholder="أ ب ج">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">أرقام اللوحة</label>
+            <input type="text" id="plate_numbers" required class="w-full border rounded-lg p-2.5 text-center" placeholder="1234">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">بلد / وجهة التحميل</label>
+          <input type="text" id="destination_country" required class="w-full border rounded-lg p-2.5" placeholder="مثال: الإمارات / الرياض">
+        </div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition shadow">تسجيل الوصول الآن</button>
+      </form>
+    </div>
+
+    <!-- جدول الطابور -->
+    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md border border-gray-200">
+      <h2 class="text-xl font-bold text-gray-700 mb-4 pb-2 border-b">قائمة الانتظار (حسب الأسبقية)</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-right border-collapse">
+          <thead>
+            <tr class="bg-gray-50 text-gray-600 text-sm border-b">
+              <th class="p-3"># الدور</th>
+              <th class="p-3">اللوحة</th>
+              <th class="p-3">السائق</th>
+              <th class="p-3">الوجهة</th>
+              <th class="p-3">وقت الوصول</th>
+              <th class="p-3 text-center">الإجراء</th>
+            </tr>
+          </thead>
+          <tbody id="queueTable" class="divide-y divide-gray-100">
+            <tr><td colSpan="6" class="text-center p-6 text-gray-500">جاري تحميل البيانات...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'https://truck-backend-ia5w.onrender.com/api/arrivals';
+
+    async function loadQueue() {
+      try {
+        const res = await fetch(`${API_URL}/queue`);
+        const data = await res.json();
+        const tbody = document.getElementById('queueTable');
+        tbody.innerHTML = '';
+
+        if (!data.queue || data.queue.length === 0) {
+          tbody.innerHTML = '<tr><td colSpan="6" class="text-center p-6 text-gray-500">لا توجد شاحنات في الانتظار.</td></tr>';
+          return;
+        }
+
+        data.queue.forEach((item, index) => {
+          const time = new Date(item.arrival_time).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+          const row = `
+            <tr class="${index === 0 ? 'bg-amber-50 font-bold' : ''}">
+              <td class="p-3">${index === 0 ? '<span class="bg-amber-500 text-white px-2 py-1 rounded text-xs">الأول (التالي)</span>' : index + 1}</td>
+              <td class="p-3">${item.full_plate}</td>
+              <td class="p-3">${item.driver_name}</td>
+              <td class="p-3">${item.destination_country}</td>
+              <td class="p-3 text-sm text-gray-500">${time}</td>
+              <td class="p-3 text-center">
+                <button onclick="updateStatus(${item.id}, 'LOADING')" class="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded shadow">بدء التحميل</button>
+              </td>
+            </tr>
+          `;
+          tbody.innerHTML += row;
+        });
+      } catch (err) { console.error(err); }
+    }
+
+    document.getElementById('truckForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        driver_name: document.getElementById('driver_name').value,
+        residency_id: document.getElementById('residency_id').value,
+        plate_letters: document.getElementById('plate_letters').value,
+        plate_numbers: document.getElementById('plate_numbers').value,
+        destination_country: document.getElementById('destination_country').value
+      };
+
+      const alertBox = document.getElementById('alert');
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          alertBox.className = 'p-3 rounded mb-4 text-sm font-semibold bg-green-100 text-green-700';
+          alertBox.innerText = 'تم تسجيل الوصول بنجاح!';
+          document.getElementById('truckForm').reset();
+          loadQueue();
+        }
+      } catch (err) {
+        alertBox.className = 'p-3 rounded mb-4 text-sm font-semibold bg-red-100 text-red-700';
+        alertBox.innerText = 'حدث خطأ في الاتصال!';
+      }
+      alertBox.classList.remove('hidden');
+    });
+
+    async function updateStatus(id, status) {
+      await fetch(`${API_URL}/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      loadQueue();
+    }
+
+    loadQueue();
+    setInterval(loadQueue, 5000); // تحديث تلقائي كل 5 ثوانٍ
+  </script>
+</body>
+</html>
